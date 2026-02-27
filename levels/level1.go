@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	fps       = 100
+	fps       = 60
 	itemCount = 5
 	FPSDelta  = 1 / float32(fps)
 )
@@ -45,8 +45,8 @@ func (g *Game) Update() (err error) {
 		}
 	}
 
-	g.CheckKeyboardInput(delta)
-	g.CheckCollisions(delta)
+	g.CheckKeyboardInput()
+	g.CheckCollisions()
 
 	g.LastTick = g.LastTick.Add(deltaDur)
 	return nil
@@ -81,7 +81,7 @@ func (g *Game) Layout(outsideWidth, outsideHeight int) (screenWidth, screenHeigh
 	return int(g.Window.W), int(g.Window.H)
 }
 
-func (g *Game) CheckCollisions(delta float32) {
+func (g *Game) CheckCollisions() {
 	for i, o1 := range g.Objects {
 		for j, o2 := range g.Objects {
 			if i >= j {
@@ -91,62 +91,74 @@ func (g *Game) CheckCollisions(delta float32) {
 				collisionCount++
 				// d := col.Depth
 				// d := float32(1.0)
+				if _, ok := o2.(*CubeBoundary); ok {
+					o1, o2 = o2, o1
+					col.Depth = -col.Depth
+				}
+				if _, ok := o1.(*Cube); ok {
+					if _, ok := o2.(*Circle); ok {
+						o1, o2 = o2, o1
+						col.Depth = -col.Depth
+					}
+				}
 				// if one is a boundary, push the other out
 				if _, ok := o1.(*CubeBoundary); ok {
-					// push o2
-					c := o2.(*Circle)
-					c.Velocity = c.Velocity.Reflect(col.Normal)
+					if c, ok := o2.(*Circle); ok {
+						// push o2
+						c.Velocity = c.Velocity.Reflect(col.Normal)
 
-					// Push circle out of wall (adjust position, not velocity)
-					c.X += col.Normal.X * col.Depth
-					c.Y += col.Normal.Y * col.Depth
+						// Push circle out of wall (adjust position, not velocity)
+						c.X += col.Normal.X * col.Depth
+						c.Y += col.Normal.Y * col.Depth
+					}
+					if c, ok := o2.(*Cube); ok {
+						// push o2
+						c.Velocity = c.Velocity.Reflect(col.Normal)
 
-				} else if _, ok := o2.(*CubeBoundary); ok {
-					// push o1
-					c := o1.(*Circle)
-					c.Velocity = c.Velocity.Reflect(col.Normal)
+						// Push cube out of wall (adjust position, not velocity)
+						c.X += col.Normal.X * col.Depth
+						c.Y += col.Normal.Y * col.Depth
+					}
+				} else if c1, ok := o1.(*Circle); ok {
+					if c2, ok := o2.(*Circle); ok {
+						// two circles
+						// c1 := o1.(*Circle)
+						// c2 := o2.(*Circle)
 
-					// Push circle out of wall (adjust position, not velocity)
-					c.X -= col.Normal.X * col.Depth
-					c.Y -= col.Normal.Y * col.Depth
-				} else {
-					// two circles
-					c1 := o1.(*Circle)
-					c2 := o2.(*Circle)
+						// Separate circles
+						c1.X -= col.Normal.X * col.Depth / 2
+						c1.Y -= col.Normal.Y * col.Depth / 2
+						c2.X += col.Normal.X * col.Depth / 2
+						c2.Y += col.Normal.Y * col.Depth / 2
 
-					// Separate circles
-					c1.X -= col.Normal.X * col.Depth / 2
-					c1.Y -= col.Normal.Y * col.Depth / 2
-					c2.X += col.Normal.X * col.Depth / 2
-					c2.Y += col.Normal.Y * col.Depth / 2
+						// Elastic collision (equal mass)
+						// Swap velocity components along collision normal
+						relVel := Vector{c1.Velocity.X - c2.Velocity.X, c1.Velocity.Y - c2.Velocity.Y}
+						dot := relVel.X*col.Normal.X + relVel.Y*col.Normal.Y
 
-					// Elastic collision (equal mass)
-					// Swap velocity components along collision normal
-					relVel := Vector{c1.Velocity.X - c2.Velocity.X, c1.Velocity.Y - c2.Velocity.Y}
-					dot := relVel.X*col.Normal.X + relVel.Y*col.Normal.Y
-
-					c1.Velocity.X -= dot * col.Normal.X
-					c1.Velocity.Y -= dot * col.Normal.Y
-					c2.Velocity.X += dot * col.Normal.X
-					c2.Velocity.Y += dot * col.Normal.Y
-
-					// c1.Velocity = c1.Velocity.Add(col.Normal.Scale(-col.Depth / 2.0))
-					// c2.Velocity = c2.Velocity.Add(col.Normal.Scale(col.Depth / 2.0))
-
-					// normalX := col.Normal.X
-					// normalY := col.Normal.Y
-					// relativeVelocityX := c1.Velocity.X - c2.Velocity.X
-					// relativeVelocityY := c1.Velocity.Y - c2.Velocity.Y
-					// relativeVelocityAlongNormal := dot(normalX, relativeVelocityX, normalY, relativeVelocityY)
-					// relativeVelocityAlongTangent := dot(-normalY, relativeVelocityX, normalX, relativeVelocityY)
-
+						c1.Velocity.X -= dot * col.Normal.X
+						c1.Velocity.Y -= dot * col.Normal.Y
+						c2.Velocity.X += dot * col.Normal.X
+						c2.Velocity.Y += dot * col.Normal.Y
+					}
+					if c2, ok := o2.(*Cube); ok {
+						// circle and cube
+						_ = c1
+						_ = c2
+					}
+				} else if c1, ok := o1.(*Cube); ok {
+					if c2, ok := o2.(*Cube); ok {
+						// two cubes
+						_ = c1
+						_ = c2
+					}
 				}
 			}
 		}
 	}
 }
 
-func (g *Game) CheckKeyboardInput(delta float32) {
+func (g *Game) CheckKeyboardInput() {
 	if ebiten.IsKeyPressed(ebiten.KeyArrowDown) {
 		cube.Scale(0.999)
 		// cube.Size = cube.Size.Scale(0.99)
@@ -176,6 +188,9 @@ func (g *Game) CheckKeyboardInput(delta float32) {
 		}
 	}
 	if isKeyJustPressed(ebiten.KeyX) || (ebiten.IsKeyPressed(ebiten.KeyX) && ebiten.IsKeyPressed(ebiten.KeyShift)) {
+		createCube(g)
+	}
+	if isKeyJustPressed(ebiten.KeyC) || (ebiten.IsKeyPressed(ebiten.KeyC) && ebiten.IsKeyPressed(ebiten.KeyShift)) {
 		createCircle(g)
 	}
 	if isKeyJustPressed(ebiten.KeyD) {
@@ -213,6 +228,7 @@ func Level1() {
 	ebiten.SetWindowSize(int(g.Window.W), int(g.Window.H))
 	cube = NewCubeBoundary(0, 0, g.Window.W-2, g.Window.H-2, 2, purple)
 	g.Objects = append(g.Objects, cube)
+	g.Objects = append(g.Objects, createCube(g))
 	for range itemCount {
 		createCircle(g)
 	}
@@ -248,4 +264,15 @@ func isKeyJustPressed(key ebiten.Key) bool {
 		keyStates[key] = false
 	}
 	return false
+}
+
+func createCube(g *Game) *Cube {
+	size := rand.Float32()*70 + 10
+	x := rand.Float32() * (cube.W - size)
+	y := rand.Float32() * (cube.H - size)
+	pos := Point{x, y}.RotateAround(Point{X: cube.W / 2, Y: cube.H / 2}, cube.Rotation).Add(Point{X: cube.X, Y: cube.Y})
+	c := NewCube(pos.X, pos.Y, size, size, color.RGBA{R: uint8(rand.Intn(256)), G: uint8(rand.Intn(256)), B: uint8(rand.Intn(256)), A: 255})
+	c.Velocity = Vector{rand.Float32()*2 - 1, rand.Float32()*2 - 1}
+	g.Objects = append(g.Objects, c)
+	return c
 }

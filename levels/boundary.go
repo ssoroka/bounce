@@ -41,6 +41,15 @@ func (b *CubeBoundary) Scale(factor float32) {
 	b.RecalculateCorners()
 }
 
+func (b *CubeBoundary) GetEdges() [4]Line {
+	return [4]Line{
+		{From: b.tl, To: b.bl},
+		{From: b.bl, To: b.br},
+		{From: b.br, To: b.tr},
+		{From: b.tr, To: b.tl},
+	}
+}
+
 func (b *CubeBoundary) RecalculateCorners() {
 	// Center of rotation
 	cx := b.X + b.W/2
@@ -99,6 +108,10 @@ func (b *CubeBoundary) Update(delta float32) error {
 	return nil
 }
 
+func movingToward(c *Circle, norm Vector) bool {
+	return dot(c.Velocity.X, norm.X, c.Velocity.Y, norm.Y) < 0
+}
+
 // CheckCircleCollision checks if a circle trapped within a cube boundary is colliding with the
 // boundary walls and returns collision info to keep it inside.
 func (b *CubeBoundary) CheckCircleCollision(c *Circle) Collision {
@@ -106,11 +119,6 @@ func (b *CubeBoundary) CheckCircleCollision(c *Circle) Collision {
 	bLine, bNorm := normal(b.bl, b.br)
 	rLine, rNorm := normal(b.br, b.tr)
 	tLine, tNorm := normal(b.tr, b.tl)
-
-	// Helper to check if moving toward the wall
-	movingToward := func(c *Circle, norm Vector) bool {
-		return dot(c.Velocity.X, norm.X, c.Velocity.Y, norm.Y) < 0
-	}
 
 	// check left wall
 	leftDist := dot(lNorm.X, c.X-lLine.From.X, lNorm.Y, c.Y-lLine.From.Y)

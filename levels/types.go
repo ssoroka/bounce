@@ -15,6 +15,10 @@ func (p Point) Sub(v Point) Point {
 	return Point{X: p.X - v.X, Y: p.Y - v.Y}
 }
 
+func (p Point) Dot(u Vector) float32 {
+	return p.X*u.X + p.Y*u.Y
+}
+
 func (p Point) Scale(scalar float32) Point {
 	return Point{X: p.X * scalar, Y: p.Y * scalar}
 }
@@ -45,7 +49,7 @@ func (v Vector) Add(u Vector) Vector {
 }
 
 func (v Vector) Reflect(normal Vector) Vector {
-	dotProduct := dot(v.X, normal.X, v.Y, normal.Y)
+	dotProduct := v.Dot(normal)
 	return Vector{
 		X: v.X - 2*dotProduct*normal.X,
 		Y: v.Y - 2*dotProduct*normal.Y,
@@ -62,6 +66,10 @@ func (v Vector) Scale(scalar float32) Vector {
 
 func (v Vector) Length() float32 {
 	return float32(math.Sqrt(float64(v.X*v.X + v.Y*v.Y)))
+}
+
+func (v Vector) Dot(u Vector) float32 {
+	return v.X*u.X + v.Y*u.Y
 }
 
 func (v Vector) Normalize() Vector {

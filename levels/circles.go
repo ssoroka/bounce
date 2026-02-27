@@ -19,7 +19,7 @@ func (c *Circle) Draw(s *ebiten.Image) {
 }
 
 func (c *Circle) Update(delta float32) error {
-	c.X = c.X + c.Velocity.X*delta*fps
-	c.Y = c.Y + c.Velocity.Y*delta*fps
+	c.X = c.X + c.Velocity.X
+	c.Y = c.Y + c.Velocity.Y
 	return nil
 }
