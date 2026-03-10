@@ -1,10 +1,5 @@
 package levels
 
-import (
-	"fmt"
-	"math"
-)
-
 type Collision struct {
 	Hit    bool
 	Normal Vector  // direction to push objects apart
@@ -14,32 +9,74 @@ type Collision struct {
 
 func CheckCollision(a, b any) Collision {
 	switch sa := a.(type) {
-	case *CubeBoundary:
+	// case *CubeBoundary:
+	// 	switch sb := b.(type) {
+	// 	case *Circle:
+	// 		c := CircleVsCubeBoundary(sb, sa)
+	// 		c.Normal = c.Normal.Scale(-1) // flip normal
+	// 		return c
+	// 		case *Cube:
+	// 			CircleVsCubeBoundary(sb.Points[0], sa)
+	// 		// 	return CubeVsBoundary(sb, sa)
+	// 	}
+	case *Boundary:
 		switch sb := b.(type) {
 		case *Circle:
 			c := CircleVsBoundary(sb, sa)
-			c.Normal = c.Normal.Scale(-1) // flip normal
+			// c.Normal = c.Normal.Scale(-1) // flip normal
 			return c
 		case *Cube:
-			return CubeVsBoundary(sb, sa)
+			// TODO: Optimize.
+			return CircleVsBoundary(sb.Points[0], sa).
+				Or(CircleVsBoundary(sb.Points[1], sa)).
+				Or(CircleVsBoundary(sb.Points[2], sa)).
+				Or(CircleVsBoundary(sb.Points[3], sa))
+			// return CubeVsBoundary(sb, sa)
 		}
 	case *Circle:
 		switch sb := b.(type) {
 		case *Circle:
 			return CircleVsCircle(sa, sb)
-		// case *CubeBoundary:
-		// 	return CircleVsBoundary(sa, sb)
+		case *CubeBoundary:
+			return CircleVsCubeBoundary(sa, sb)
+		case *Boundary:
+			return CircleVsBoundary(sa, sb)
 		case *Cube:
-			return CircleVsCube(sa, sb)
+			return CircleVsCircle(sb.Points[0], sa).
+				Or(CircleVsCircle(sb.Points[1], sa)).
+				Or(CircleVsCircle(sb.Points[2], sa)).
+				Or(CircleVsCircle(sb.Points[3], sa))
 		}
 	case *Cube:
 		switch sb := b.(type) {
 		case *Circle:
-			return CircleVsCube(sb, sa)
+			return CircleVsCircle(sb, sa.Points[0]).
+				Or(CircleVsCircle(sb, sa.Points[1])).
+				Or(CircleVsCircle(sb, sa.Points[2])).
+				Or(CircleVsCircle(sb, sa.Points[3]))
+		case *Boundary:
+			return CircleVsBoundary(sa.Points[0], sb).
+				Or(CircleVsBoundary(sa.Points[1], sb)).
+				Or(CircleVsBoundary(sa.Points[2], sb)).
+				Or(CircleVsBoundary(sa.Points[3], sb))
 		case *Cube:
-			return CubeVsCube(sa, sb)
-		case *CubeBoundary:
-			return CubeVsBoundary(sa, sb)
+			return CircleVsCircle(sa.Points[0], sb.Points[0]).
+				Or(CircleVsCircle(sa.Points[0], sb.Points[1])).
+				Or(CircleVsCircle(sa.Points[0], sb.Points[2])).
+				Or(CircleVsCircle(sa.Points[0], sb.Points[3])).
+				Or(CircleVsCircle(sa.Points[1], sb.Points[0])).
+				Or(CircleVsCircle(sa.Points[1], sb.Points[1])).
+				Or(CircleVsCircle(sa.Points[1], sb.Points[2])).
+				Or(CircleVsCircle(sa.Points[1], sb.Points[3])).
+				Or(CircleVsCircle(sa.Points[2], sb.Points[0])).
+				Or(CircleVsCircle(sa.Points[2], sb.Points[1])).
+				Or(CircleVsCircle(sa.Points[2], sb.Points[2])).
+				Or(CircleVsCircle(sa.Points[2], sb.Points[3])).
+				Or(CircleVsCircle(sa.Points[3], sb.Points[0])).
+				Or(CircleVsCircle(sa.Points[3], sb.Points[1])).
+				Or(CircleVsCircle(sa.Points[3], sb.Points[2])).
+				Or(CircleVsCircle(sa.Points[3], sb.Points[3]))
+
 		}
 	}
 	return Collision{}
@@ -67,7 +104,11 @@ func CircleVsCircle(a, b *Circle) Collision {
 	}
 }
 
-func CircleVsBoundary(c *Circle, r *CubeBoundary) Collision {
+func CircleVsCubeBoundary(c *Circle, r *CubeBoundary) Collision {
+	return r.CheckCircleCollision(c)
+}
+
+func CircleVsBoundary(c *Circle, r *Boundary) Collision {
 	return r.CheckCircleCollision(c)
 }
 
@@ -75,127 +116,127 @@ func CircleVsCube(c *Circle, cube *Cube) Collision {
 	return Collision{}
 }
 
-func CubeVsCube(a, b *Cube) Collision {
-	// if the cubes are axis-aligned, we can do a simple AABB check.
-	if floatMod(a.Rotation, 90) == floatMod(b.Rotation, 90) {
-		if a.X < b.X+b.W && a.X+a.W > b.X && a.Y < b.Y+b.H && a.Y+a.H > b.Y {
-			// Simple AABB collision response (push apart along shortest axis)
-			dx := min(a.X+a.W-b.X, b.X+b.W-a.X)
-			dy := min(a.Y+a.H-b.Y, b.Y+b.H-a.Y)
-			if dx < dy {
-				if a.X < b.X {
-					return Collision{Hit: true, Normal: Vector{X: -1, Y: 0}, Depth: dx}
-				} else {
-					return Collision{Hit: true, Normal: Vector{X: 1, Y: 0}, Depth: dx}
-				}
-			} else {
-				if a.Y < b.Y {
-					return Collision{Hit: true, Normal: Vector{X: 0, Y: -1}, Depth: dy}
-				} else {
-					return Collision{Hit: true, Normal: Vector{X: 0, Y: 1}, Depth: dy}
-				}
-			}
-		}
-		return Collision{}
-	}
-	// for rotated cubes, we use the Separating Axis Theorem (SAT)
-	return CubeVsCubeSAT(a, b)
+// func CubeVsCube(a, b *Cube) Collision {
+// 	// if the cubes are axis-aligned, we can do a simple AABB check.
+// 	if floatMod(a.Rotation, 90) == floatMod(b.Rotation, 90) {
+// 		if a.X < b.X+b.W && a.X+a.W > b.X && a.Y < b.Y+b.H && a.Y+a.H > b.Y {
+// 			// Simple AABB collision response (push apart along shortest axis)
+// 			dx := min(a.X+a.W-b.X, b.X+b.W-a.X)
+// 			dy := min(a.Y+a.H-b.Y, b.Y+b.H-a.Y)
+// 			if dx < dy {
+// 				if a.X < b.X {
+// 					return Collision{Hit: true, Normal: Vector{X: -1, Y: 0}, Depth: dx}
+// 				} else {
+// 					return Collision{Hit: true, Normal: Vector{X: 1, Y: 0}, Depth: dx}
+// 				}
+// 			} else {
+// 				if a.Y < b.Y {
+// 					return Collision{Hit: true, Normal: Vector{X: 0, Y: -1}, Depth: dy}
+// 				} else {
+// 					return Collision{Hit: true, Normal: Vector{X: 0, Y: 1}, Depth: dy}
+// 				}
+// 			}
+// 		}
+// 		return Collision{}
+// 	}
+// 	// for rotated cubes, we use the Separating Axis Theorem (SAT)
+// 	return CubeVsCubeSAT(a, b)
 
-	// return Collision{}
-}
+// 	// return Collision{}
+// }
 
-func CubeVsBoundary(cube *Cube, boundary *CubeBoundary) Collision {
-	// Use same approach as CheckCircleCollision but check cube corners
-	edges := boundary.GetEdges()
+// func CubeVsBoundary(cube *Cube, boundary *CubeBoundary) Collision {
+// 	// Use same approach as CheckCircleCollision but check cube corners
+// 	edges := boundary.GetEdges()
 
-	// For each boundary edge
-	for edgeIdx, edge := range edges {
-		edgeNormal := edge.Normal()
+// 	// For each boundary edge
+// 	for edgeIdx, edge := range edges {
+// 		edgeNormal := edge.Normal()
 
-		// Check each corner of the cube
-		for cornerIdx, corner := range cube.GetCorners() {
-			// Distance from edge to this corner
-			dist := dot(edgeNormal.X, corner.X-edge.From.X, edgeNormal.Y, corner.Y-edge.From.Y)
+// 		// Check each corner of the cube
+// 		for cornerIdx, corner := range cube.GetCorners() {
+// 			// Distance from edge to this corner
+// 			dist := dot(edgeNormal.X, corner.X-edge.From.X, edgeNormal.Y, corner.Y-edge.From.Y)
 
-			// Debug: print for first cube
-			if cornerIdx == 0 && edgeIdx == 0 {
-				fmt.Printf("Edge %d, Corner %d: dist=%.2f, normal=(%.2f,%.2f), vel=(%.2f,%.2f)\n",
-					edgeIdx, cornerIdx, dist, edgeNormal.X, edgeNormal.Y, cube.Velocity.X, cube.Velocity.Y)
-			}
+// 			// Debug: print for first cube
+// 			if cornerIdx == 0 && edgeIdx == 0 {
+// 				fmt.Printf("Edge %d, Corner %d: dist=%.2f, normal=(%.2f,%.2f), vel=(%.2f,%.2f)\n",
+// 					edgeIdx, cornerIdx, dist, edgeNormal.X, edgeNormal.Y, cube.Velocity.X, cube.Velocity.Y)
+// 			}
 
-			// If corner is close to or past the wall (threshold of 1 pixel)
-			if dist < 1 {
-				// Check if cube is moving toward this wall
-				velDot := cube.Velocity.X*edgeNormal.X + cube.Velocity.Y*edgeNormal.Y
-				if velDot < 0 {
-					depth := 1 - dist // how far to push back
-					fmt.Printf("COLLISION! Edge %d, Corner %d: dist=%.2f, depth=%.2f\n",
-						edgeIdx, cornerIdx, dist, depth)
-					return Collision{
-						Hit:    true,
-						Normal: edgeNormal,
-						Depth:  depth,
-					}
-				}
-			}
-		}
-	}
+// 			// If corner is close to or past the wall (threshold of 1 pixel)
+// 			if dist < 1 {
+// 				// Check if cube is moving toward this wall
+// 				velDot := cube.Velocity.X*edgeNormal.X + cube.Velocity.Y*edgeNormal.Y
+// 				if velDot < 0 {
+// 					depth := 1 - dist // how far to push back
+// 					fmt.Printf("COLLISION! Edge %d, Corner %d: dist=%.2f, depth=%.2f\n",
+// 						edgeIdx, cornerIdx, dist, depth)
+// 					return Collision{
+// 						Hit:    true,
+// 						Normal: edgeNormal,
+// 						Depth:  depth,
+// 					}
+// 				}
+// 			}
+// 		}
+// 	}
 
-	return Collision{}
-}
+// 	return Collision{}
+// }
 
 func floatMod(a float32, b int) float32 {
 	return a - float32(int(a)/b)*float32(b)
 }
 
-func CubeVsCubeSAT(a, b *Cube) Collision {
-	// Get corners of both cubes
-	cornersA := a.GetCorners() // [4]Vector (tl, tr, br, bl)
-	cornersB := b.GetCorners()
+// func CubeVsCubeSAT(a, b *Cube) Collision {
+// 	// Get corners of both cubes
+// 	cornersA := a.GetCorners() // [4]Vector (tl, tr, br, bl)
+// 	cornersB := b.GetCorners()
 
-	// Get edge normals (perpendicular to each edge)
-	axesA := a.GetAxes() // [2]Vector (only need 2, opposite edges are parallel)
-	axesB := b.GetAxes()
+// 	// Get edge normals (perpendicular to each edge)
+// 	axesA := a.GetAxes() // [2]Vector (only need 2, opposite edges are parallel)
+// 	axesB := b.GetAxes()
 
-	axes := []Vector{axesA[0], axesA[1], axesB[0], axesB[1]}
+// 	axes := []Vector{axesA[0], axesA[1], axesB[0], axesB[1]}
 
-	minDepth := float32(math.MaxFloat32)
-	minAxis := Vector{}
+// 	minDepth := float32(math.MaxFloat32)
+// 	minAxis := Vector{}
 
-	for _, axis := range axes {
-		// Project all corners of A onto axis
-		minA, maxA := projectCorners(cornersA, axis)
-		// Project all corners of B onto axis
-		minB, maxB := projectCorners(cornersB, axis)
+// 	for _, axis := range axes {
+// 		// Project all corners of A onto axis
+// 		minA, maxA := projectCorners(cornersA, axis)
+// 		// Project all corners of B onto axis
+// 		minB, maxB := projectCorners(cornersB, axis)
 
-		// Check for gap
-		if maxA < minB || maxB < minA {
-			return Collision{} // Separating axis found = no collision
-		}
+// 		// Check for gap
+// 		if maxA < minB || maxB < minA {
+// 			return Collision{} // Separating axis found = no collision
+// 		}
 
-		// Calculate overlap depth on this axis
-		overlap := min(maxA-minB, maxB-minA)
-		if overlap < minDepth {
-			minDepth = overlap
-			minAxis = axis
-		}
-	}
+// 		// Calculate overlap depth on this axis
+// 		overlap := min(maxA-minB, maxB-minA)
+// 		if overlap < minDepth {
+// 			minDepth = overlap
+// 			minAxis = axis
+// 		}
+// 	}
 
-	// No separating axis found = collision
-	// minAxis is the collision normal, minDepth is penetration
+// 	// No separating axis found = collision
+// 	// minAxis is the collision normal, minDepth is penetration
 
-	// Make sure normal points from A to B
-	centerDiff := Vector{X: b.X - a.X, Y: b.Y - a.Y}
-	if minAxis.Dot(centerDiff) < 0 {
-		minAxis = minAxis.Scale(-1)
-	}
+// 	// Make sure normal points from A to B
+// 	centerDiff := Vector{X: b.X - a.X, Y: b.Y - a.Y}
+// 	if minAxis.Dot(centerDiff) < 0 {
+// 		minAxis = minAxis.Scale(-1)
+// 	}
 
-	return Collision{
-		Hit:    true,
-		Normal: minAxis,
-		Depth:  minDepth,
-	}
-}
+// 	return Collision{
+// 		Hit:    true,
+// 		Normal: minAxis,
+// 		Depth:  minDepth,
+// 	}
+// }
 
 func projectCorners(corners [4]Vector, axis Vector) (min, max float32) {
 	min = corners[0].Dot(axis)
@@ -210,4 +251,11 @@ func projectCorners(corners [4]Vector, axis Vector) (min, max float32) {
 		}
 	}
 	return
+}
+
+func (c Collision) Or(other Collision) Collision {
+	if c.Hit {
+		return c
+	}
+	return other
 }

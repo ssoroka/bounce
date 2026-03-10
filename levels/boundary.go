@@ -1,8 +1,11 @@
 package levels
 
 import (
+	"encoding/json"
 	"image/color"
 	"math"
+	"math/rand"
+	"sort"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/vector"
@@ -175,4 +178,275 @@ func clamp(value, min, max float32) float32 {
 		return max
 	}
 	return value
+}
+
+type Boundary struct {
+	Lines       []Line
+	StrokeWidth float32
+	Color       color.Color
+}
+
+const (
+	pointCount = 6
+	variance   = float32(100)
+)
+
+func NewBoundaryLine(from, to Point, strokeWidth float32, color color.Color) *Boundary {
+	return &Boundary{
+		Lines:       []Line{{From: from, To: to}},
+		StrokeWidth: strokeWidth,
+		Color:       color,
+	}
+}
+
+func (b *Boundary) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		Type        string  `json:"type"`
+		Lines       []Line  `json:"lines"`
+		StrokeWidth float32 `json:"strokeWidth"`
+		ColorR      uint8   `json:"R"`
+		ColorG      uint8   `json:"G"`
+		ColorB      uint8   `json:"B"`
+		ColorA      uint8   `json:"A"`
+	}{
+		Type:        "Boundary",
+		Lines:       b.Lines,
+		StrokeWidth: b.StrokeWidth,
+		ColorR:      uint8(b.Color.(color.RGBA).R),
+		ColorG:      uint8(b.Color.(color.RGBA).G),
+		ColorB:      uint8(b.Color.(color.RGBA).B),
+		ColorA:      uint8(b.Color.(color.RGBA).A),
+	})
+}
+
+func (b *Boundary) UnmarshalJSON(data []byte) error {
+	aux := struct {
+		Type        string  `json:"type"`
+		Lines       []Line  `json:"lines"`
+		StrokeWidth float32 `json:"strokeWidth"`
+		ColorR      uint8   `json:"R"`
+		ColorG      uint8   `json:"G"`
+		ColorB      uint8   `json:"B"`
+		ColorA      uint8   `json:"A"`
+	}{}
+
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+
+	b.Lines = aux.Lines
+	b.StrokeWidth = aux.StrokeWidth
+	b.Color = color.RGBA{R: aux.ColorR, G: aux.ColorG, B: aux.ColorB, A: aux.ColorA}
+	return nil
+}
+
+func NewBoundary(x, y, w, h, strokeWidth float32, color color.Color) *Boundary {
+	lines := []Line{}
+
+	// LEFT WALL
+	// pick 3 points inside the volume area to connect to, somewhat close to the wall
+	start := Point{x, y}
+	end := Point{x, y + h}
+	juts := make([]Point, pointCount)
+	for i := range pointCount {
+		juts[i] = Point{
+			X: x + rand.Float32()*variance,
+			Y: rand.Float32()*(end.Y-start.Y) + start.Y,
+		}
+	}
+	sort.Slice(juts, func(i, j int) bool {
+		return juts[i].Y < juts[j].Y
+	})
+
+	// create lines between the points and the start and end
+	appendLines := func(juts []Point, start, end Point) {
+		for i := range pointCount {
+			if i == 0 {
+				lines = append(lines, Line{From: start, To: juts[i]})
+			} else if i == pointCount-1 {
+				lines = append(lines, Line{From: juts[i-1], To: juts[i]})
+				lines = append(lines, Line{From: juts[i], To: end})
+			} else {
+				lines = append(lines, Line{From: juts[i-1], To: juts[i]})
+			}
+		}
+	}
+
+	appendLines(juts, start, end)
+
+	// BOTTOM WALL
+	// pick 3 points inside the volume area to connect to, somewhat close to the wall
+	start = Point{x, y + h}
+	end = Point{x + w, y + h}
+	for i := range pointCount {
+		juts[i] = Point{X: x + rand.Float32()*(end.X-start.X+end.X), Y: start.Y - rand.Float32()*variance}
+	}
+	sort.Slice(juts, func(i, j int) bool {
+		return juts[i].X < juts[j].X
+	})
+
+	// create lines between the points and the start and end
+	appendLines(juts, start, end)
+
+	// RIGHT WALL
+	// pick 3 points inside the volume area to connect to, somewhat close to the wall
+	start = Point{x + w, y + h}
+	end = Point{x + w, y}
+	for i := range pointCount {
+		juts[i] = Point{start.X - rand.Float32()*variance, rand.Float32()*(end.Y-start.Y) + start.Y}
+	}
+	sort.Slice(juts, func(i, j int) bool {
+		return juts[i].Y > juts[j].Y
+	})
+
+	// create lines between the points and the start and end
+	appendLines(juts, start, end)
+
+	// TOP WALL
+	start = Point{x + w, y}
+	end = Point{x, y}
+	for i := range pointCount {
+		juts[i] = Point{rand.Float32()*(end.X-start.X) + start.X, start.Y + rand.Float32()*variance}
+	}
+	sort.Slice(juts, func(i, j int) bool {
+		return juts[i].X > juts[j].X
+	})
+
+	// create lines between the points and the start and end
+	appendLines(juts, start, end)
+
+	return &Boundary{Lines: lines, StrokeWidth: strokeWidth, Color: color}
+}
+
+func (b *Boundary) Draw(screen *ebiten.Image) {
+	for _, line := range b.Lines {
+		vector.StrokeLine(screen, line.From.X, line.From.Y, line.To.X, line.To.Y, 2, purple, true)
+		lLine, _ := normal(line.From, line.To)
+		if debug {
+			vector.StrokeLine(screen, lLine.From.X, lLine.From.Y, lLine.To.X, lLine.To.Y, b.StrokeWidth, green, true)
+		}
+	}
+}
+
+func (b *Boundary) Update(delta float32) error {
+	return nil
+}
+
+// func (b *Boundary) CheckCircleCollision(c *Circle) Collision {
+// 	for _, line := range b.Lines {
+// 		// check collision with each line segment
+// 		lLine, lNorm := normal(line.From, line.To)
+// 		rotatedNormal := Vector{X: -lNorm.Y, Y: lNorm.X}
+
+// 		toCircle := Vector{X: c.X - line.From.X, Y: c.Y - line.From.Y}
+
+// 		rotatedDistToLine := dot(rotatedNormal.X, c.X-line.From.X, rotatedNormal.Y, c.Y-line.From.Y)
+
+// 		lineDist := dot(lNorm.X, c.X-lLine.From.X, lNorm.Y, c.Y-lLine.From.Y)
+
+// 		withinLine := rotatedDistToLine >= 0 && rotatedDistToLine <= line.Length() // ✅ Within [0, length]
+// 		// withinLine := math.Abs(float64(rotatedDistToLine)) < float64(line.Length())/2
+
+// 		if lineDist > 0 && lineDist < c.Radius && withinLine && movingToward(c, lNorm) {
+// 			return Collision{
+// 				Hit:    true, // only consider it a collision if the circle is moving towards the wall
+// 				Normal: lNorm,
+// 				Depth:  c.Radius - lineDist,
+// 				Point:  Vector{X: c.X - lNorm.X*lineDist, Y: c.Y - lNorm.Y*lineDist},
+// 			}
+// 		}
+// 	}
+// 	return Collision{}
+// }
+
+func (b *Boundary) CheckCircleCollision(c *Circle) Collision {
+	for _, line := range b.Lines {
+		// Find closest point on line segment to circle center
+		closestPoint := line.ClosestPoint(Vector{X: c.X, Y: c.Y})
+
+		// Distance from circle center to closest point
+		delta := Vector{X: c.X - closestPoint.X, Y: c.Y - closestPoint.Y}
+		dist := delta.Length()
+
+		normal := delta.Normalize()
+		if dist < c.Radius && c.Velocity.Dot(normal.Scale(-1)) > 0 {
+			return Collision{
+				Hit:    true,
+				Normal: normal,
+				Depth:  c.Radius - dist,
+				Point:  closestPoint,
+			}
+		}
+	}
+
+	startPos := c.LastPosition
+	endPos := Point{X: c.X, Y: c.Y}
+
+	for _, line := range b.Lines {
+		// Check if circle path intersects line
+		if t := raySegmentIntersect(startPos, endPos, c.Radius, line); t >= 0 {
+			// Collision at time t along movement
+			collisionPos := startPos.Add(endPos.Sub(startPos).Scale(t))
+			// calculate collision response: bounce off the line normal
+			lineVec := Vector{X: line.To.X - line.From.X, Y: line.To.Y - line.From.Y}
+			normal := Vector{X: -lineVec.Y, Y: lineVec.X}.Normalize()
+			if c.Velocity.Dot(normal.Scale(-1)) > 0 {
+				return Collision{
+					Hit:    true,
+					Normal: normal,
+					Depth:  c.Radius, // could be refined to actual penetration depth
+					Point:  Vector(collisionPos),
+				}
+			}
+		}
+	}
+
+	return Collision{}
+}
+
+func raySegmentIntersect(start, end Point, radius float32, line Line) float32 {
+	// Ray from start to end
+	rayDir := Vector{X: end.X - start.X, Y: end.Y - start.Y}
+	rayLength := rayDir.Length()
+	if rayLength == 0 {
+		return -1 // No movement
+	}
+	rayDir = rayDir.Scale(1 / rayLength) // Normalize
+
+	// Line segment vector
+	lineDir := Vector{X: line.To.X - line.From.X, Y: line.To.Y - line.From.Y}
+	lineLength := lineDir.Length()
+	if lineLength == 0 {
+		return -1 // Invalid line
+	}
+	lineDir = lineDir.Scale(1 / lineLength) // Normalize
+
+	// Calculate intersection using cross products
+	cross := rayDir.X*lineDir.Y - rayDir.Y*lineDir.X
+	if math.Abs(float64(cross)) < 1e-8 {
+		return -1 // Parallel lines
+	}
+
+	diff := Vector{X: line.From.X - start.X, Y: line.From.Y - start.Y}
+	t := (diff.X*lineDir.Y - diff.Y*lineDir.X) / cross
+	u := (diff.X*rayDir.Y - diff.Y*rayDir.X) / cross
+
+	if t >= 0 && t <= rayLength && u >= 0 && u <= lineLength {
+		return t / rayLength // Return normalized time of collision
+	}
+
+	return -1 // No collision
+}
+
+func (l Line) ClosestPoint(p Vector) Vector {
+	lineVec := Vector{X: l.To.X - l.From.X, Y: l.To.Y - l.From.Y}
+	toPoint := Vector{X: p.X - l.From.X, Y: p.Y - l.From.Y}
+
+	t := toPoint.Dot(lineVec) / lineVec.Dot(lineVec)
+	t = clamp(t, 0, 1) // Clamp to segment bounds
+
+	return Vector{
+		X: l.From.X + t*lineVec.X,
+		Y: l.From.Y + t*lineVec.Y,
+	}
 }
